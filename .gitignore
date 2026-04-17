@@ -1,0 +1,27 @@
+node_modules/
+*.log
+.DS_Store
+
+# Local tooling state
+.omc/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+coverage/
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Plugin runtime artifacts in consuming projects (not this repo — this is just a safety net in case
+# someone experiments with the plugin in-tree)
+.claude/code-rag.db*
+.claude/code-rag.log
+.claude/code-rag.lock

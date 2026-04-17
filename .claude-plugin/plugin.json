@@ -1,0 +1,21 @@
+{
+  "name": "cc-advanced-rag",
+  "description": "Zero-infra code search RAG plugin for Claude Code. SQLite + sqlite-vec embedded vector DB, hybrid search (BM25 + dense), multi-provider embeddings (Voyage/Ollama/OpenAI), tree-sitter parsers for 9 languages, automatic bootstrap via hooks.",
+  "version": "0.1.0",
+  "author": { "name": "hyunseung" },
+  "homepage": "https://github.com/hayan89/cc-advanced-rag",
+  "repository": "https://github.com/hayan89/cc-advanced-rag",
+  "license": "MIT",
+  "keywords": [
+    "rag",
+    "code-search",
+    "mcp",
+    "sqlite-vec",
+    "claude-code",
+    "voyage",
+    "ollama",
+    "semantic-search",
+    "hybrid-search",
+    "tree-sitter"
+  ]
+}

@@ -3,7 +3,7 @@ import * as sqliteVec from "sqlite-vec";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, openSync, closeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export interface ClientOptions {
   dbPath: string;
@@ -109,8 +109,13 @@ function applyPendingMigrations(db: Database): void {
     .get();
   const current = currentRow?.version ?? 0;
 
-  // No migrations beyond v1 yet. Future versions go here as sequential
-  // `applyMigration(db, N)` calls guarded by `if (current < N)`.
+  if (current < 2) {
+    const migrationPath = join(import.meta.dir, "migrations", "0002_chunk_tags.sql");
+    if (existsSync(migrationPath)) {
+      db.exec(readFileSync(migrationPath, "utf-8"));
+    }
+  }
+
   if (current < CURRENT_SCHEMA_VERSION) {
     db.query(`INSERT OR IGNORE INTO schema_version (version) VALUES (?)`).run(
       CURRENT_SCHEMA_VERSION,

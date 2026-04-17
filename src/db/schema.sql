@@ -85,6 +85,19 @@ CREATE TRIGGER IF NOT EXISTS chunks_vec_ad AFTER DELETE ON chunks BEGIN
 END;
 
 -- ────────────────────────────────────────────────
+-- 2b. Normalized tag table (fast `get_related` by tag overlap).
+--     chunks.tags_json is retained as the source of truth; this table
+--     is a derived index that lives alongside it for O(log n) lookup.
+-- ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS chunk_tags (
+  chunk_id  INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+  tag       TEXT NOT NULL,
+  PRIMARY KEY (chunk_id, tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunk_tags_tag ON chunk_tags(tag);
+
+-- ────────────────────────────────────────────────
 -- 3. File metadata
 -- ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS files (

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://github.com/hayan89/cc-advanced-rag/raw/main/templates/code-rag.config.schema.json",
+  "dbPath": ".claude/code-rag.db",
+  "logPath": ".claude/code-rag.log",
+  "lockPath": ".claude/code-rag.lock",
+  "embedding": {
+    "provider": "voyage",
+    "model": "voyage-code-3",
+    "dimension": 1024,
+    "batchSize": 128,
+    "rateLimitPerMinute": 1000,
+    "privacyMode": false
+  },
+  "languages": ["typescript", "tsx", "javascript", "jsx"],
+  "scope": null,
+  "gitignoreRespect": true,
+  "exclude": [
+    "node_modules/**",
+    "vendor/**",
+    ".git/**",
+    "dist/**",
+    "build/**",
+    "coverage/**",
+    ".next/**",
+    "**/*.min.js"
+  ],
+  "indexing": {
+    "maxFileSizeBytes": 1048576,
+    "followSymlinks": false,
+    "binaryDetect": true
+  },
+  "tagging": {
+    "customTags": []
+  },
+  "cache": {
+    "l1TtlHours": 24
+  }
+}

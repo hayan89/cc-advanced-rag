@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "bun ${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|Edit|Write|Grep",
+        "type": "command",
+        "command": "bun ${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.mjs"
+      }
+    ]
+  }
+}

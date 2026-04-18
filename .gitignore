@@ -21,7 +21,9 @@ coverage/
 .idea/
 
 # Plugin runtime artifacts in consuming projects (not this repo — this is just a safety net in case
-# someone experiments with the plugin in-tree)
+# someone experiments with the plugin in-tree). `.claude/` is ignored wholesale so local configs and
+# the indexed DB never land in the plugin source tree.
+.claude/
 .claude/code-rag.db*
 .claude/code-rag.log
 .claude/code-rag.lock

@@ -25,6 +25,20 @@ export function computeSignatureHash(parts: string[]): string {
   return crypto.createHash("sha256").update(normalized.join("\n")).digest("hex");
 }
 
+/**
+ * Per-chunk signature hash: derived from stable, whitespace-insensitive
+ * identity fields. Used by the incremental indexer to detect whether a chunk
+ * must be re-embedded.
+ */
+export function computeChunkSignatureHash(chunk: CodeChunk): string {
+  return computeSignatureHash([
+    chunk.chunkType,
+    chunk.receiverType ?? "",
+    chunk.symbolName ?? "",
+    chunk.signature ?? "",
+  ]);
+}
+
 /** C 계열(//, #) 단일-라인 연속 주석을 역추적 수집. */
 export function extractLineComment(
   source: string,

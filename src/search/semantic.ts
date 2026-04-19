@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { distanceToCosineSimilarity } from "./distance.ts";
 import { DEFAULT_LIMIT, type SearchOptions, type SearchResult } from "./types.ts";
 
 type Binding = string | number | bigint | boolean | null | Uint8Array;
@@ -69,7 +70,7 @@ export function semanticSearch(input: SemanticSearchInput): SearchResult[] {
     signature: row.signature,
     snippet: truncateSnippet(row.content),
     highlight: null,
-    score: 1 - row.distance,
+    score: distanceToCosineSimilarity(row.distance),
     startLine: row.start_line,
     endLine: row.end_line,
     scope: row.scope,

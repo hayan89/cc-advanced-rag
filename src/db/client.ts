@@ -3,7 +3,7 @@ import * as sqliteVec from "sqlite-vec";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, openSync, closeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export interface ClientOptions {
   dbPath: string;
@@ -72,9 +72,9 @@ function applySchema(db: Database): void {
 }
 
 /**
- * Ensure chunks_vec virtual table exists with the requested dimension.
- * If the stored dimension in meta differs, throw — caller decides whether
- * to rebuild.
+ * Ensure chunks_vec and semantic_cache_vec virtual tables exist with the
+ * requested dimension. If the stored dimension in meta differs, throw — caller
+ * decides whether to rebuild.
  */
 function ensureVecTable(db: Database, dimension: number): void {
   const storedRow = db
@@ -91,7 +91,7 @@ function ensureVecTable(db: Database, dimension: number): void {
     db.query(`INSERT INTO meta (key, value) VALUES ('stored_dimension', ?)`).run(String(dimension));
   }
 
-  // Create the vec0 table if it doesn't exist. The dimension is interpolated
+  // Create the vec0 tables if they don't exist. The dimension is interpolated
   // into the DDL (sqlite-vec does not support parameterized dimensions).
   // Safe because `dimension` is validated as a positive integer.
   if (!Number.isInteger(dimension) || dimension <= 0 || dimension > 65536) {
@@ -100,6 +100,9 @@ function ensureVecTable(db: Database, dimension: number): void {
 
   db.exec(
     `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(embedding float[${dimension}]);`,
+  );
+  db.exec(
+    `CREATE VIRTUAL TABLE IF NOT EXISTS semantic_cache_vec USING vec0(embedding float[${dimension}]);`,
   );
 }
 
@@ -113,6 +116,28 @@ function applyPendingMigrations(db: Database): void {
     const migrationPath = join(import.meta.dir, "migrations", "0002_chunk_tags.sql");
     if (existsSync(migrationPath)) {
       db.exec(readFileSync(migrationPath, "utf-8"));
+    }
+  }
+
+  if (current < 3) {
+    const migrationPath = join(import.meta.dir, "migrations", "0003_l2_semantic_and_chunk_hashes.sql");
+    if (existsSync(migrationPath)) {
+      // applySchema already ran CREATE TABLE IF NOT EXISTS for semantic_cache,
+      // so the only SQL here that could raise is the ALTER TABLE for
+      // index_ledger.chunk_hashes_json. Skip gracefully if the column already
+      // exists (re-run on an already-migrated DB).
+      try {
+        db.exec(readFileSync(migrationPath, "utf-8"));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/duplicate column name/i.test(msg)) throw err;
+      }
+      // v2 embeddings were not L2-normalized. Mark that a full reindex is
+      // required before the new cosine-similarity formulas are meaningful.
+      db.query(
+        `INSERT INTO meta (key, value) VALUES ('reindex_required', '1')
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      ).run();
     }
   }
 

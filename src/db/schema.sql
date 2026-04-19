@@ -118,13 +118,18 @@ CREATE INDEX IF NOT EXISTS idx_files_scope ON files(scope);
 
 -- ────────────────────────────────────────────────
 -- 4. Incremental indexing ledger (git blob SHA + AST hash)
+--    chunk_hashes_json:
+--      NULL     → legacy row (pre-v3); fall back to chunks-table reconstruction
+--      '[]'     → file parsed to zero chunks (empty / invalid)
+--      '[...]'  → [{key, sig}, ...] per-chunk hashes for chunk-level diff
 -- ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS index_ledger (
-  file_path       TEXT PRIMARY KEY,
-  blob_sha        TEXT NOT NULL,
-  signature_hash  TEXT NOT NULL,
-  chunk_count     INTEGER NOT NULL,
-  indexed_at      INTEGER NOT NULL DEFAULT (unixepoch())
+  file_path          TEXT PRIMARY KEY,
+  blob_sha           TEXT NOT NULL,
+  signature_hash     TEXT NOT NULL,
+  chunk_count        INTEGER NOT NULL,
+  chunk_hashes_json  TEXT,
+  indexed_at         INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 -- ────────────────────────────────────────────────
@@ -142,3 +147,24 @@ CREATE TABLE IF NOT EXISTS exact_cache (
 
 CREATE INDEX IF NOT EXISTS idx_ecache_expires ON exact_cache(expires_at);
 CREATE INDEX IF NOT EXISTS idx_ecache_git_head ON exact_cache(git_head_sha);
+
+-- ────────────────────────────────────────────────
+-- 6. L2 semantic cache (query embedding + results, git HEAD bound)
+--    Paired with `semantic_cache_vec` virtual table (dim-dependent, created
+--    programmatically in client.ts).
+-- ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS semantic_cache (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  query_text      TEXT NOT NULL,
+  result_json     TEXT NOT NULL,
+  git_head_sha    TEXT NOT NULL,
+  scope           TEXT,
+  mode            TEXT NOT NULL,
+  limit_n         INTEGER NOT NULL,
+  hit_count       INTEGER NOT NULL DEFAULT 0,
+  created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+  expires_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_scache_git_head ON semantic_cache(git_head_sha);
+CREATE INDEX IF NOT EXISTS idx_scache_expires ON semantic_cache(expires_at);

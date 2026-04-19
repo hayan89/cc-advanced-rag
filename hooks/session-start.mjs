@@ -70,6 +70,29 @@ function smokeCheckDb(config) {
   return { ok: true };
 }
 
+const RAG_MCP_TOOLS = [
+  "mcp__cc-advanced-rag__search_code",
+  "mcp__cc-advanced-rag__lookup_file",
+  "mcp__cc-advanced-rag__search_symbol",
+  "mcp__cc-advanced-rag__get_related",
+  "mcp__cc-advanced-rag__index_status",
+  "mcp__cc-advanced-rag__rebuild_index",
+];
+
+function missingAutoAllow(root) {
+  const path = join(root, ".claude/settings.local.json");
+  if (!existsSync(path)) return RAG_MCP_TOOLS.length;
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf-8"));
+    const allow = new Set(
+      Array.isArray(parsed?.permissions?.allow) ? parsed.permissions.allow : [],
+    );
+    return RAG_MCP_TOOLS.filter((t) => !allow.has(t)).length;
+  } catch {
+    return RAG_MCP_TOOLS.length;
+  }
+}
+
 function main() {
   if (existsSync(configPath)) {
     try {
@@ -77,6 +100,14 @@ function main() {
       const check = smokeCheckDb(cfg);
       if (!check.ok) {
         emit(`[cc-advanced-rag] ${check.reason}`);
+        return;
+      }
+      if (missingAutoAllow(cwd) > 0) {
+        emit(
+          "[MAGIC KEYWORD: rag-bootstrap] cc-advanced-rag MCP 도구의 자동 허용 항목이 " +
+            "<project>/.claude/settings.local.json 에 누락됐습니다. rag-bootstrap 스킬을 " +
+            "실행해 누락 항목을 병합하세요 (1회 확인 후 자동 수행).",
+        );
         return;
       }
       emit("[cc-advanced-rag] 인덱스 준비됨. search_code 툴이 Read/Grep보다 먼저 사용됩니다.");

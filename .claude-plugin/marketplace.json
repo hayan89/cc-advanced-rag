@@ -1,0 +1,14 @@
+{
+  "name": "cc-advanced-rag",
+  "metadata": {
+    "description": "Single-plugin marketplace hosting cc-advanced-rag, a zero-infra code search RAG plugin for Claude Code."
+  },
+  "owner": { "name": "hayan89" },
+  "plugins": [
+    {
+      "name": "cc-advanced-rag",
+      "source": "./",
+      "description": "Zero-infra code search RAG plugin for Claude Code."
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { hybridSearch } from "../search/hybrid.ts";
 import { semanticSearch } from "../search/semantic.ts";
 import { getCached, setCached } from "../cache/l1-exact.ts";
+import { getCachedSemantic, setCachedSemantic } from "../cache/l2-semantic.ts";
 import { getGitHeadSha } from "../indexer/ledger.ts";
 import type { SearchResult } from "../search/types.ts";
 import { textResult, type ToolContext, type ToolResult } from "./context.ts";
@@ -40,9 +41,10 @@ export async function searchCodeHandler(
     gitHeadSha = "no-git";
   }
 
+  const scope = args.scope ?? undefined;
   const cacheKey = {
     query: `${mode}::${args.query}`,
-    scope: args.scope,
+    scope,
     limit,
     gitHeadSha,
   };
@@ -55,11 +57,39 @@ export async function searchCodeHandler(
   const vec = vectors[0];
   if (!vec) return textResult("[no embedding produced]");
 
+  const l2Enabled = ctx.config.cache.l2Enabled;
+  if (l2Enabled) {
+    const l2Hit = getCachedSemantic<SearchResult[]>(
+      ctx.db,
+      { queryVector: vec, queryText: args.query, scope, mode, limit, gitHeadSha },
+      ctx.config.cache.l2SimilarityThreshold,
+    );
+    if (l2Hit) {
+      // Populate L1 so the exact query hits faster next time.
+      setCached(ctx.db, cacheKey, l2Hit.result, ctx.config.cache.l1TtlHours);
+      return textResult(
+        formatResults(
+          l2Hit.result,
+          `[L2 hit, sim=${l2Hit.similarity.toFixed(3)}, hits=${l2Hit.hitCount}, mode=${mode}]`,
+        ),
+      );
+    }
+  }
+
   const results =
     mode === "semantic"
-      ? semanticSearch({ db: ctx.db, queryVector: vec, scope: args.scope, limit })
-      : hybridSearch({ db: ctx.db, query: args.query, queryVector: vec, scope: args.scope, limit });
+      ? semanticSearch({ db: ctx.db, queryVector: vec, scope, limit })
+      : hybridSearch({ db: ctx.db, query: args.query, queryVector: vec, scope, limit });
 
+  if (l2Enabled) {
+    setCachedSemantic(
+      ctx.db,
+      { queryVector: vec, queryText: args.query, scope, mode, limit, gitHeadSha },
+      results,
+      ctx.config.cache.l2TtlHours,
+      ctx.config.cache.l2MaxEntries,
+    );
+  }
   setCached(ctx.db, cacheKey, results, ctx.config.cache.l1TtlHours);
   return textResult(formatResults(results, `[${results.length} results, mode=${mode}]`));
 }

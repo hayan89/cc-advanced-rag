@@ -78,6 +78,20 @@ function toFloat32Array(arr: number[]): Float32Array {
   return out;
 }
 
+/**
+ * L2-normalize a vector in place and return it. Required so that sqlite-vec's
+ * default L2 distance corresponds to cosine distance (norm=1 → L2² = 2(1-cos)).
+ * Zero vectors are returned unchanged — the caller will see distance ≥ 2.
+ */
+export function normalizeL2(vec: Float32Array): Float32Array {
+  let sumSq = 0;
+  for (let i = 0; i < vec.length; i++) sumSq += vec[i]! * vec[i]!;
+  if (sumSq === 0) return vec;
+  const inv = 1 / Math.sqrt(sumSq);
+  for (let i = 0; i < vec.length; i++) vec[i] = vec[i]! * inv;
+  return vec;
+}
+
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3, baseMs = 500): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
@@ -166,7 +180,7 @@ class VoyageEmbedder implements Embedder {
       if (!resp.data) throw new Error("Voyage: response missing data");
       for (const item of resp.data) {
         if (!item.embedding) throw new Error("Voyage: embedding missing");
-        out.push(toFloat32Array(item.embedding));
+        out.push(normalizeL2(toFloat32Array(item.embedding)));
       }
     }
     return { vectors: out, provider: "voyage" };
@@ -219,7 +233,7 @@ class OpenAIEmbedder implements Embedder {
           dimensions: this.config.dimension,
         }),
       );
-      for (const item of resp.data) out.push(toFloat32Array(item.embedding));
+      for (const item of resp.data) out.push(normalizeL2(toFloat32Array(item.embedding)));
     }
     return { vectors: out, provider: "openai" };
   }
@@ -265,7 +279,7 @@ class OllamaEmbedder implements Embedder {
         return (await r.json()) as { embedding: number[] };
       });
       if (!resp.embedding) throw new Error("Ollama: embedding missing");
-      out.push(toFloat32Array(resp.embedding));
+      out.push(normalizeL2(toFloat32Array(resp.embedding)));
     }
     return { vectors: out, provider: "ollama" };
   }

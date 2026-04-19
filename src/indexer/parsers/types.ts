@@ -27,6 +27,12 @@ export interface CodeChunk {
   docComment: string | null;
   imports: string[];
   tags: string[];
+  /**
+   * Whitespace/comment-insensitive hash of the chunk's semantic identity
+   * (type + symbol + signature). Populated centrally in the indexer via
+   * `computeChunkSignatureHash` so parsers don't need per-chunk hashing.
+   */
+  signatureHash?: string;
 }
 
 export interface FileMetadata {

@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { distanceToCosineSimilarity } from "./distance.ts";
 import { buildFtsQuery } from "./fts-query.ts";
 import { truncateSnippet } from "./semantic.ts";
 import { DEFAULT_LIMIT, type SearchOptions, type SearchResult } from "./types.ts";
@@ -85,7 +86,7 @@ function runVectorChannel(
   return rows.map((r, idx) => ({
     id: r.id,
     rank: idx + 1,
-    score: 1 - r.distance,
+    score: distanceToCosineSimilarity(r.distance),
   }));
 }
 

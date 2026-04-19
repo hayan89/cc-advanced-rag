@@ -3,7 +3,7 @@ import * as sqliteVec from "sqlite-vec";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, openSync, closeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 export interface ClientOptions {
   dbPath: string;
@@ -138,6 +138,21 @@ function applyPendingMigrations(db: Database): void {
         `INSERT INTO meta (key, value) VALUES ('reindex_required', '1')
            ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       ).run();
+    }
+  }
+
+  if (current < 4) {
+    const migrationPath = join(import.meta.dir, "migrations", "0004_chunk_tag_weights.sql");
+    if (existsSync(migrationPath)) {
+      // schema.sql already defines chunk_tags.weight for fresh DBs, so the
+      // ALTER in 0004 is only meaningful on pre-v4 installs. Swallow the
+      // duplicate-column error when the column is already present.
+      try {
+        db.exec(readFileSync(migrationPath, "utf-8"));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/duplicate column name/i.test(msg)) throw err;
+      }
     }
   }
 

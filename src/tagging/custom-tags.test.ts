@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { applyTagRules, compileTagRules, mergeTags, InvalidTagRegex } from "./resource-tags.ts";
+import { applyTagRules, compileTagRules, mergeTags, InvalidTagRegex } from "./custom-tags.ts";
 import { parseConfig } from "../config/loader.ts";
 
 describe("compileTagRules", () => {

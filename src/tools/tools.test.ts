@@ -33,7 +33,9 @@ beforeAll(() => {
     VALUES ('src/a.ts','h','typescript',5,1);
     INSERT INTO files (file_path, file_hash, language, line_count, chunk_count)
     VALUES ('src/b.ts','h','typescript',20,1);
-    INSERT INTO chunk_tags (chunk_id, tag) VALUES (1,'handler'),(1,'api'),(2,'handler'),(2,'validation');
+    INSERT INTO chunk_tags (chunk_id, tag, weight) VALUES
+      (1,'handler',1),(1,'api',1),(1,'resource:receipt-upload',3),
+      (2,'handler',1),(2,'validation',1),(2,'resource:receipt-upload',3);
   `);
 
   ctx = {
@@ -93,11 +95,26 @@ describe("search_symbol", () => {
 });
 
 describe("get_related", () => {
-  test("finds related file via shared tag", async () => {
+  test("finds related file via weighted tag score", async () => {
+    // src/a.ts has tags {handler, api, resource:receipt-upload}; src/b.ts has
+    // {handler, validation, resource:receipt-upload}. Shared tags are
+    // `handler` (weight 1) and `resource:receipt-upload` (weight 3) ⇒ score 4.
     const result = await getRelatedHandler({ filePath: "src/a.ts" }, ctx);
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("src/b.ts");
-    expect(text).toContain("overlap=1");
+    expect(text).toContain("score=4");
+  });
+
+  test("resourceOnly restricts to resource:* tags", async () => {
+    const result = await getRelatedHandler(
+      { filePath: "src/a.ts", resourceOnly: true },
+      ctx,
+    );
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("src/b.ts");
+    // Only resource:receipt-upload (weight 3) counts under resourceOnly.
+    expect(text).toContain("score=3");
+    expect(text).toContain("reference_tags=resource:receipt-upload");
   });
 
   test("reports missing tags when no reference exists", async () => {

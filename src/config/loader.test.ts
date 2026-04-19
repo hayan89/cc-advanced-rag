@@ -151,3 +151,49 @@ describe("ConfigSchema exports", () => {
     expect(cfg.languages).toContain("csharp");
   });
 });
+
+describe("tagging.resourceExtractor", () => {
+  test("defaults enable extraction with weight 3 and stopwords populated", () => {
+    const cfg = parseConfig({});
+    expect(cfg.tagging.resourceExtractor.enabled).toBe(true);
+    expect(cfg.tagging.resourceExtractor.resourceWeight).toBe(3);
+    expect(cfg.tagging.resourceExtractor.stopwords).toContain("index");
+    expect(cfg.tagging.resourceExtractor.stopwords).toContain("auth");
+    expect(cfg.tagging.resourceExtractor.includePaths).toEqual([]);
+    expect(cfg.tagging.resourceExtractor.excludePaths).toEqual([]);
+  });
+
+  test("overrides respect user-supplied values", () => {
+    const cfg = parseConfig({
+      tagging: {
+        resourceExtractor: {
+          enabled: false,
+          resourceWeight: 5,
+          stopwords: ["foo"],
+          includePaths: ["backend/**"],
+          excludePaths: ["**/generated/**"],
+        },
+      },
+    });
+    expect(cfg.tagging.resourceExtractor.enabled).toBe(false);
+    expect(cfg.tagging.resourceExtractor.resourceWeight).toBe(5);
+    expect(cfg.tagging.resourceExtractor.stopwords).toEqual(["foo"]);
+    expect(cfg.tagging.resourceExtractor.includePaths).toEqual(["backend/**"]);
+    expect(cfg.tagging.resourceExtractor.excludePaths).toEqual(["**/generated/**"]);
+  });
+
+  test("resourceWeight must be within 1..10", () => {
+    expect(() =>
+      parseConfig({ tagging: { resourceExtractor: { resourceWeight: 0 } } }),
+    ).toThrow(ConfigError);
+    expect(() =>
+      parseConfig({ tagging: { resourceExtractor: { resourceWeight: 11 } } }),
+    ).toThrow(ConfigError);
+  });
+
+  test("rejects unknown fields (strict schema)", () => {
+    expect(() =>
+      parseConfig({ tagging: { resourceExtractor: { whatever: true } } }),
+    ).toThrow(ConfigError);
+  });
+});

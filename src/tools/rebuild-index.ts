@@ -7,7 +7,8 @@ export const rebuildIndexToolDef = {
     "인덱싱을 재실행합니다. 서버 프로세스에서는 동기 실행을 차단하고, " +
     "별도의 `bun run <plugin>/scripts/index.ts` 실행을 안내하거나, " +
     "진행 중인 작업이 있으면 그 jobId를 반환합니다. " +
-    "인자: { scope?: string, since?: string (commit-ish), full?: boolean, async?: boolean }.",
+    "인자: { scope?: string, since?: string (commit-ish), full?: boolean, async?: boolean }. " +
+    "schema v4로 업그레이드한 뒤에는 full 재인덱싱을 실행해야 resource:* 태그가 생성됩니다.",
   inputSchema: {
     type: "object",
     properties: {

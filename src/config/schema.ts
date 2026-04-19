@@ -44,9 +44,22 @@ export const CustomTagSchema = z
   })
   .strict();
 
+export const ResourceExtractorConfigSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    resourceWeight: z.number().int().min(1).max(10).default(3),
+    stopwords: z
+      .array(z.string())
+      .default(["index", "util", "helper", "types", "common", "main", "auth", "user", "config"]),
+    includePaths: z.array(z.string()).default([]),
+    excludePaths: z.array(z.string()).default([]),
+  })
+  .strict();
+
 export const TaggingConfigSchema = z
   .object({
     customTags: z.array(CustomTagSchema).default([]),
+    resourceExtractor: ResourceExtractorConfigSchema.default({}),
   })
   .strict();
 
@@ -73,7 +86,7 @@ export const ConfigSchema = z
     gitignoreRespect: z.boolean().default(true),
     exclude: z.array(z.string()).default(["node_modules/**", "vendor/**", ".git/**", "dist/**", "build/**"]),
     indexing: IndexingConfigSchema.default({}),
-    tagging: TaggingConfigSchema.default({ customTags: [] }),
+    tagging: TaggingConfigSchema.default({}),
     cache: CacheConfigSchema.default({
       l1TtlHours: 24,
       l2Enabled: true,

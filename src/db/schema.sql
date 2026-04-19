@@ -92,10 +92,12 @@ END;
 CREATE TABLE IF NOT EXISTS chunk_tags (
   chunk_id  INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
   tag       TEXT NOT NULL,
+  weight    INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (chunk_id, tag)
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunk_tags_tag ON chunk_tags(tag);
+CREATE INDEX IF NOT EXISTS idx_chunk_tags_tag_weight ON chunk_tags(tag, weight DESC);
 
 -- ────────────────────────────────────────────────
 -- 3. File metadata

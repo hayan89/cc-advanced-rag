@@ -84,7 +84,7 @@ Claude Code orchestrates:
 - `search_code(query, limit?, scope?, mode?)` — hybrid semantic+BM25 search. Always prefer over Read/Grep for discovery.
 - `lookup_file(filePath, limit?)` — full set of chunks for a file (structure at a glance).
 - `search_symbol(name, exact?, language?, limit?)` — name-based symbol lookup.
-- `get_related(filePath|chunkId, limit?)` — related code via shared tags (cross-stack navigation).
+- `get_related(filePath|chunkId, limit?, resourceOnly?)` — related code via weighted shared tags. `resource:*` tags (auto-derived from path/symbol, e.g. `resource:receipt-upload`) carry the configured weight so backend handlers surface their frontend counterparts ahead of mere bucket overlap. `resourceOnly: true` restricts matching to `resource:*` tags for strict cross-stack navigation.
 - `index_status()` — chunks/files/language breakdown, dimension, cache stats.
 - `rebuild_index({scope?, since?, full?, async?})` — returns the command to run out-of-process.
 
@@ -99,7 +99,16 @@ Claude Code orchestrates:
   "languages": ["typescript", "tsx", "python"],
   "gitignoreRespect": true,
   "exclude": ["node_modules/**", "vendor/**"],
-  "tagging": { "customTags": [{ "name": "receipt", "regex": "[Rr]eceipt" }] },
+  "tagging": {
+    "customTags": [{ "name": "receipt", "regex": "[Rr]eceipt" }],
+    "resourceExtractor": {
+      "enabled": true,
+      "resourceWeight": 3,
+      "stopwords": ["index", "util", "helper", "types", "common", "main", "auth", "user", "config"],
+      "includePaths": [],
+      "excludePaths": []
+    }
+  },
   "cache": { "l1TtlHours": 24 }
 }
 ```
@@ -107,6 +116,26 @@ Claude Code orchestrates:
 API keys live in `.env` only — never commit them. Supported: `VOYAGE_API_KEY`, `OPENAI_API_KEY`, `OLLAMA_BASE_URL`.
 
 Detailed field reference: [`skills/rag-bootstrap/references/config-schema.md`](skills/rag-bootstrap/references/config-schema.md).
+
+### Resource tags & cross-stack matching
+
+`get_related` uses two tag classes:
+
+| Class | Examples | Weight | Source |
+|---|---|---|---|
+| Structural | `handlers`, `api`, `routes`, `function`, `component` | 1 | Directory buckets + chunk type |
+| Domain | `resource:receipt-upload`, `resource:user-profile` | 3 (default) | Auto-derived from file path + symbol, normalized to `kebab-case` |
+
+Because the `resource:*` weight dominates bucket overlap, a Go handler
+`backend/api/handlers/receipt_upload.go` and its SvelteKit route
+`frontend/src/routes/receipt-upload/+page.svelte` surface as strong matches
+even though they share zero structural tags — `handlers` vs `routes`.
+
+Opt out by setting `tagging.resourceExtractor.enabled: false`. Narrow the
+scope with `includePaths` / `excludePaths` (both support `*` and `**` globs;
+`**/foo` matches `foo/...` at the root too). After enabling on an existing
+project, run `/cc-advanced-rag:rebuild` so previously-indexed chunks acquire
+the new tags.
 
 ## Performance targets
 

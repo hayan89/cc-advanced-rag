@@ -8,7 +8,14 @@ import { detectLanguage, parseFile, preWarmParsers } from "./parsers/registry.ts
 import type { ParseResult } from "./parsers/types.ts";
 import { decide } from "./file-filter.ts";
 import { loadIgnoreMatcher } from "../gitignore/loader.ts";
-import { applyTagRules, compileTagRules, mergeTags } from "../tagging/resource-tags.ts";
+import { applyTagRules, compileTagRules, mergeTags } from "../tagging/custom-tags.ts";
+import {
+  DEFAULT_STRUCTURAL_BUCKETS,
+  DEFAULT_SYMBOL_SUFFIXES,
+  extractResourceTags,
+  tagWeight,
+  type ExtractorOpts,
+} from "../tagging/resource-extractor.ts";
 import {
   getGitBlobShas,
   gitDiffSince,
@@ -86,6 +93,16 @@ export async function runIndex(opts: IndexOptions): Promise<IndexSummary> {
       extraPatterns: config.exclude,
     });
     const tagRules = compileTagRules(config);
+    const resourceCfg = config.tagging.resourceExtractor;
+    const resourceOpts: ExtractorOpts = {
+      structuralBuckets: DEFAULT_STRUCTURAL_BUCKETS,
+      symbolSuffixes: DEFAULT_SYMBOL_SUFFIXES,
+      stopwords: new Set(resourceCfg.stopwords),
+      includePaths: resourceCfg.includePaths,
+      excludePaths: resourceCfg.excludePaths,
+    };
+    const resourceEnabled = resourceCfg.enabled;
+    const resourceWeight = resourceCfg.resourceWeight;
 
     const currentBlobs = safelyGetBlobs(projectRoot);
     const ledger = loadLedger(client.db);
@@ -142,6 +159,7 @@ export async function runIndex(opts: IndexOptions): Promise<IndexSummary> {
           embedder,
           tagRules,
           ledger.get(filePath),
+          { enabled: resourceEnabled, opts: resourceOpts, weight: resourceWeight },
         );
         summary.chunksInserted += inserted;
         summary.filesProcessed++;
@@ -169,6 +187,12 @@ export async function runIndex(opts: IndexOptions): Promise<IndexSummary> {
  * transaction. Embedding happens *before* the transaction because Bun's
  * transaction callback must be synchronous with respect to DB writes.
  */
+interface ResourceConfig {
+  enabled: boolean;
+  opts: ExtractorOpts;
+  weight: number;
+}
+
 async function indexOneFile(
   db: Database,
   parsed: ParseResult,
@@ -177,6 +201,7 @@ async function indexOneFile(
   embedder: Embedder,
   tagRules: ReturnType<typeof compileTagRules>,
   prevLedgerEntry: LedgerEntry | undefined,
+  resource: ResourceConfig,
 ): Promise<number> {
   const filePath = parsed.metadata.filePath;
   if (parsed.chunks.length === 0) {
@@ -264,6 +289,9 @@ async function indexOneFile(
   }
 
   const customFileTags = applyTagRules(tagRules, { filePath, content: source });
+  const fileResourceTags = resource.enabled
+    ? extractResourceTags({ filePath }, resource.opts)
+    : [];
 
   // 6. Atomic write: replace file's rows, restore/insert embeddings, update ledger.
   const tx = db.transaction(() => {
@@ -277,7 +305,16 @@ async function indexOneFile(
       const fresh = freshByIdx.get(i);
       const vecBytes = reuse ?? (fresh ? toBytes(fresh) : null);
       if (!vecBytes) continue;
-      const chunkTags = mergeTags(chunk.tags, customFileTags);
+      const chunkResourceTags = resource.enabled
+        ? extractResourceTags(
+            { filePath, symbolName: chunk.symbolName },
+            resource.opts,
+          )
+        : [];
+      const chunkTags = mergeTags(
+        chunk.tags,
+        mergeTags(fileResourceTags, mergeTags(chunkResourceTags, customFileTags)),
+      );
 
       const res = db
         .query<
@@ -323,10 +360,9 @@ async function indexOneFile(
 
       db.query(`DELETE FROM chunk_tags WHERE chunk_id = ?`).run(res.id);
       for (const tag of chunkTags) {
-        db.query(`INSERT OR IGNORE INTO chunk_tags (chunk_id, tag) VALUES (?, ?)`).run(
-          res.id,
-          tag,
-        );
+        db.query(
+          `INSERT OR IGNORE INTO chunk_tags (chunk_id, tag, weight) VALUES (?, ?, ?)`,
+        ).run(res.id, tag, tagWeight(tag, resource.weight));
       }
       inserted++;
       hashes.push({ key: chunkKey(chunk), sig: chunk.signatureHash! });

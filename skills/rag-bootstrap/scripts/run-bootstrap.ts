@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ensureGitignoreEntries } from "../../../src/bootstrap/gitignore-append.ts";
 import { installPostCommitHook } from "../../../src/bootstrap/install-git-hook.ts";
+import { mergeSettings, MalformedSettingsError } from "../../../src/bootstrap/settings-merge.ts";
 
 interface Args {
   provider: "voyage" | "ollama" | "openai";
@@ -69,6 +70,20 @@ function main(): void {
   // 3) Install post-commit hook (chain-call, idempotent).
   const hr = installPostCommitHook(root, args.pluginRoot);
   console.log(`[rag-bootstrap] post-commit hook ${hr.action}${hr.path ? `: ${hr.path}` : ""}`);
+
+  // 4) Merge MCP tool auto-allow into <project>/.claude/settings.local.json.
+  try {
+    const sm = mergeSettings(root);
+    console.log(`[rag-bootstrap] settings.local.json ${sm.action}: ${sm.path} (added=${sm.added.length})`);
+  } catch (err) {
+    if (err instanceof MalformedSettingsError) {
+      console.error(`[rag-bootstrap] ${err.message}`);
+    } else {
+      console.error(
+        `[rag-bootstrap] settings merge failed: ${err instanceof Error ? err.message : String(err)}. Run /rag-doctor.`,
+      );
+    }
+  }
 
   console.log(
     `[rag-bootstrap] done. Next: run \`bun ${args.pluginRoot}/scripts/setup.sh\` then \`bun ${args.pluginRoot}/scripts/index.ts --full\`.`,

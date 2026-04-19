@@ -51,6 +51,13 @@ Removing the plugin itself via `claude plugin remove cc-advanced-rag` stops Clau
    rm -rf .claude/.cc-advanced-rag
    ```
 
+8. **MCP auto-allow entries** — remove the six `mcp__cc-advanced-rag__*` ids from `permissions.allow` in `.claude/settings.local.json` (preserves any other entries you have):
+   ```bash
+   jq '.permissions.allow |= map(select(startswith("mcp__cc-advanced-rag__") | not))' \
+     .claude/settings.local.json > .claude/settings.local.json.tmp \
+     && mv .claude/settings.local.json.tmp .claude/settings.local.json
+   ```
+
 ## Sanity check
 
 ```bash
@@ -64,7 +71,8 @@ No output means the project is fully clean.
 All steps above are non-destructive to your source code. If you reinstall the plugin:
 
 ```bash
-claude plugin add --from https://github.com/hayan89/cc-advanced-rag
+claude plugin marketplace add hayan89/cc-advanced-rag
+claude plugin install cc-advanced-rag@cc-advanced-rag
 ```
 
 the `rag-bootstrap` skill will detect the absent config on the next session and re-run setup from scratch.

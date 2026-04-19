@@ -17,15 +17,5 @@
     "semantic-search",
     "hybrid-search",
     "tree-sitter"
-  ],
-  "permissions": {
-    "allow": [
-      "mcp__cc-advanced-rag__search_code",
-      "mcp__cc-advanced-rag__lookup_file",
-      "mcp__cc-advanced-rag__search_symbol",
-      "mcp__cc-advanced-rag__get_related",
-      "mcp__cc-advanced-rag__index_status",
-      "mcp__cc-advanced-rag__rebuild_index"
-    ]
-  }
+  ]
 }

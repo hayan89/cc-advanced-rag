@@ -11,11 +11,31 @@ Zero-infra code search RAG plugin for Claude Code.
 
 ## Installation
 
-```bash
-claude plugin add --from https://github.com/hayan89/cc-advanced-rag
+In Claude Code:
+
+```text
+/plugin marketplace add hayan89/cc-advanced-rag
+/plugin install cc-advanced-rag@cc-advanced-rag
 ```
 
-The next session opens Claude in a project with supported-language files will nudge you via the `rag-bootstrap` skill. Answer the privacy question and the plugin generates the config, initializes the SQLite DB, installs the git hook, appends `.gitignore` entries, pre-warms parsers, and kicks off the initial indexing.
+The CLI form works too:
+
+```bash
+claude plugin marketplace add hayan89/cc-advanced-rag
+claude plugin install cc-advanced-rag@cc-advanced-rag
+```
+
+The next session opens Claude in a project with supported-language files will nudge you via the `rag-bootstrap` skill. Answer the privacy question and the plugin generates the config, initializes the SQLite DB, installs the git hook, appends `.gitignore` entries, merges the six `mcp__cc-advanced-rag__*` ids into your project's `.claude/settings.local.json` (`permissions.allow`), pre-warms parsers, and kicks off the initial indexing.
+
+### Upgrading from pre-marketplace versions
+
+If you previously installed via `claude plugin add --from <url>`, remove the old install first:
+
+```bash
+claude plugin remove cc-advanced-rag
+claude plugin marketplace add hayan89/cc-advanced-rag
+claude plugin install cc-advanced-rag@cc-advanced-rag
+```
 
 If anything fails or you want to re-run setup manually:
 

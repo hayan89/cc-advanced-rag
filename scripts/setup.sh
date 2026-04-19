@@ -73,5 +73,11 @@ console.error('[setup] integrity_check=' + (check.ok ? 'ok' : check.messages.joi
 client.close();
 "
 
+# 5. Merge MCP tool auto-allow into the project's settings.local.json.
+echo "[setup] merging MCP auto-allow into <project>/.claude/settings.local.json ..."
+if ! bun "${PLUGIN_ROOT}/scripts/merge-settings.ts" "${PROJECT_ROOT}"; then
+  echo "[setup] cc-advanced-rag: settings merge failed. Run /rag-doctor for recovery." >&2
+fi
+
 echo "[setup] done. Run the indexer next:"
 echo "  bun ${PLUGIN_ROOT}/scripts/index.ts --full"

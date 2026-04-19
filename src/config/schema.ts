@@ -53,6 +53,10 @@ export const TaggingConfigSchema = z
 export const CacheConfigSchema = z
   .object({
     l1TtlHours: z.number().int().positive().default(24),
+    l2Enabled: z.boolean().default(true),
+    l2SimilarityThreshold: z.number().min(0.85).max(0.99).default(0.95),
+    l2TtlHours: z.number().int().positive().default(24),
+    l2MaxEntries: z.number().int().positive().default(1000),
   })
   .strict();
 
@@ -70,7 +74,13 @@ export const ConfigSchema = z
     exclude: z.array(z.string()).default(["node_modules/**", "vendor/**", ".git/**", "dist/**", "build/**"]),
     indexing: IndexingConfigSchema.default({}),
     tagging: TaggingConfigSchema.default({ customTags: [] }),
-    cache: CacheConfigSchema.default({ l1TtlHours: 24 }),
+    cache: CacheConfigSchema.default({
+      l1TtlHours: 24,
+      l2Enabled: true,
+      l2SimilarityThreshold: 0.95,
+      l2TtlHours: 24,
+      l2MaxEntries: 1000,
+    }),
   })
   .strict();
 

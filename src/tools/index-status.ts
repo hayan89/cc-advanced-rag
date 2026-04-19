@@ -1,4 +1,5 @@
 import { getCacheStats } from "../cache/l1-exact.ts";
+import { getSemanticCacheStats } from "../cache/l2-semantic.ts";
 import { textResult, type ToolContext, type ToolResult } from "./context.ts";
 
 export const indexStatusToolDef = {
@@ -41,6 +42,7 @@ export async function indexStatusHandler(
     .get();
 
   const cache = getCacheStats(ctx.db);
+  const l2 = getSemanticCacheStats(ctx.db);
 
   const lines = [
     `# Index status`,
@@ -59,9 +61,15 @@ export async function indexStatusHandler(
       ? [`(none — index is empty)`]
       : langs.map((l) => `- ${l.language}: ${l.n} files`)),
     ``,
-    `## L1 Cache`,
+    `## L1 Cache (exact)`,
     `- entries: ${cache.entries} (expired=${cache.expiredEntries})`,
     `- total hits: ${cache.hitCountTotal}`,
+    ``,
+    `## L2 Cache (semantic)`,
+    `- enabled: ${ctx.config.cache.l2Enabled}`,
+    `- threshold: ${ctx.config.cache.l2SimilarityThreshold}`,
+    `- entries: ${l2.entries} (expired=${l2.expired})`,
+    `- total hits: ${l2.hitTotal}`,
   ];
   return textResult(lines.join("\n"));
 }

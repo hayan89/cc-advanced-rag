@@ -6,6 +6,20 @@ export interface LedgerEntry {
   blobSha: string;
   signatureHash: string;
   chunkCount: number;
+  /**
+   * Per-chunk hash map serialized as JSON.
+   *   null     → legacy entry (pre-v3); reconstruct from chunks table on demand
+   *   '[]'     → file parsed to zero chunks
+   *   '[...]'  → [{ key, sig }, ...]
+   */
+  chunkHashesJson?: string | null;
+}
+
+export interface ChunkHashEntry {
+  /** `<chunkType>:<symbolName>:<startLine>` — stable key for a chunk row. */
+  key: string;
+  /** Whitespace-insensitive signature hash (`computeChunkSignatureHash`). */
+  sig: string;
 }
 
 export type ChangeType =
@@ -93,9 +107,18 @@ export function gitDiffSince(repoRoot: string, fromCommit: string, toCommit = "H
 export function loadLedger(db: Database): Map<string, LedgerEntry> {
   const rows = db
     .query<
-      { file_path: string; blob_sha: string; signature_hash: string; chunk_count: number },
+      {
+        file_path: string;
+        blob_sha: string;
+        signature_hash: string;
+        chunk_count: number;
+        chunk_hashes_json: string | null;
+      },
       []
-    >(`SELECT file_path, blob_sha, signature_hash, chunk_count FROM index_ledger`)
+    >(
+      `SELECT file_path, blob_sha, signature_hash, chunk_count, chunk_hashes_json
+         FROM index_ledger`,
+    )
     .all();
   const map = new Map<string, LedgerEntry>();
   for (const row of rows) {
@@ -104,6 +127,7 @@ export function loadLedger(db: Database): Map<string, LedgerEntry> {
       blobSha: row.blob_sha,
       signatureHash: row.signature_hash,
       chunkCount: row.chunk_count,
+      chunkHashesJson: row.chunk_hashes_json,
     });
   }
   return map;
@@ -111,14 +135,81 @@ export function loadLedger(db: Database): Map<string, LedgerEntry> {
 
 export function upsertLedgerEntry(db: Database, entry: LedgerEntry): void {
   db.query(
-    `INSERT INTO index_ledger (file_path, blob_sha, signature_hash, chunk_count, indexed_at)
-     VALUES (?, ?, ?, ?, unixepoch())
+    `INSERT INTO index_ledger
+       (file_path, blob_sha, signature_hash, chunk_count, chunk_hashes_json, indexed_at)
+     VALUES (?, ?, ?, ?, ?, unixepoch())
      ON CONFLICT(file_path) DO UPDATE SET
        blob_sha = excluded.blob_sha,
        signature_hash = excluded.signature_hash,
        chunk_count = excluded.chunk_count,
+       chunk_hashes_json = excluded.chunk_hashes_json,
        indexed_at = unixepoch()`,
-  ).run(entry.filePath, entry.blobSha, entry.signatureHash, entry.chunkCount);
+  ).run(
+    entry.filePath,
+    entry.blobSha,
+    entry.signatureHash,
+    entry.chunkCount,
+    entry.chunkHashesJson ?? null,
+  );
+}
+
+/**
+ * Build a `key → sig` map for a file's prior chunks. Prefers the JSON array on
+ * the ledger entry; falls back to the `chunks` table for legacy (pre-v3) rows
+ * by recomputing signature hashes from stored fields.
+ */
+export function buildOldChunkHashMap(
+  db: Database,
+  filePath: string,
+  chunkHashesJson: string | null | undefined,
+  recomputeHash: (row: {
+    chunk_type: string;
+    symbol_name: string | null;
+    receiver_type: string | null;
+    signature: string | null;
+  }) => string,
+): Map<string, string> {
+  const map = new Map<string, string>();
+
+  if (typeof chunkHashesJson === "string") {
+    try {
+      const parsed = JSON.parse(chunkHashesJson) as ChunkHashEntry[];
+      if (Array.isArray(parsed)) {
+        for (const e of parsed) {
+          if (e && typeof e.key === "string" && typeof e.sig === "string") {
+            map.set(e.key, e.sig);
+          }
+        }
+      }
+      return map;
+    } catch {
+      /* fall through to reconstruction */
+    }
+  }
+
+  // Legacy fallback: rebuild from chunks table.
+  const rows = db
+    .query<
+      {
+        chunk_type: string;
+        symbol_name: string | null;
+        receiver_type: string | null;
+        signature: string | null;
+        start_line: number;
+      },
+      [string]
+    >(
+      `SELECT chunk_type, symbol_name, receiver_type, signature, start_line
+         FROM chunks
+        WHERE file_path = ?`,
+    )
+    .all(filePath);
+
+  for (const r of rows) {
+    const key = `${r.chunk_type}:${r.symbol_name ?? ""}:${r.start_line}`;
+    map.set(key, recomputeHash(r));
+  }
+  return map;
 }
 
 export function deleteLedgerEntry(db: Database, filePath: string): void {

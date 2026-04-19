@@ -16,7 +16,11 @@ import {
   upsertLedgerEntry,
   garbageCollectFile,
   applyRename,
+  buildOldChunkHashMap,
+  type ChunkHashEntry,
+  type LedgerEntry,
 } from "./ledger.ts";
+import { computeChunkSignatureHash, computeSignatureHash } from "./parsers/common.ts";
 
 type Binding = string | number | bigint | boolean | null | Uint8Array;
 type Bindings = Binding[];
@@ -130,7 +134,15 @@ export async function runIndex(opts: IndexOptions): Promise<IndexSummary> {
           summary.filesSkipped++;
           continue;
         }
-        const inserted = await indexOneFile(client.db, parsed, blobSha, source, embedder, tagRules);
+        const inserted = await indexOneFile(
+          client.db,
+          parsed,
+          blobSha,
+          source,
+          embedder,
+          tagRules,
+          ledger.get(filePath),
+        );
         summary.chunksInserted += inserted;
         summary.filesProcessed++;
         opts.onProgress?.({ processed, total, filePath });
@@ -164,6 +176,7 @@ async function indexOneFile(
   source: string,
   embedder: Embedder,
   tagRules: ReturnType<typeof compileTagRules>,
+  prevLedgerEntry: LedgerEntry | undefined,
 ): Promise<number> {
   const filePath = parsed.metadata.filePath;
   if (parsed.chunks.length === 0) {
@@ -174,23 +187,96 @@ async function indexOneFile(
         blobSha,
         signatureHash: parsed.signatureHash,
         chunkCount: 0,
+        chunkHashesJson: "[]",
       });
     })();
     return 0;
   }
 
-  const embedInputs = parsed.chunks.map(chunkText);
-  const { vectors } = await embedder.embed(embedInputs, { inputType: "document" });
+  // 1. Per-chunk signature hash for diff + ledger persistence.
+  for (const chunk of parsed.chunks) {
+    chunk.signatureHash = computeChunkSignatureHash(chunk);
+  }
+
+  // 2. Old key → sig map from ledger (or chunks-table fallback for legacy rows).
+  const oldSigByKey = buildOldChunkHashMap(
+    db,
+    filePath,
+    prevLedgerEntry?.chunkHashesJson,
+    (row) =>
+      computeSignatureHash([
+        row.chunk_type,
+        row.receiver_type ?? "",
+        row.symbol_name ?? "",
+        row.signature ?? "",
+      ]),
+  );
+
+  // 3. Old embedding bytes keyed by the same `type:symbol:startLine` scheme —
+  //    used to reuse embeddings when a chunk is unchanged or simply moved.
+  const oldEmbeddingsByKey = loadEmbeddingsByKey(db, filePath);
+
+  // Inverse map for move detection: sig → key(s) (first wins).
+  const oldKeyBySig = new Map<string, string>();
+  for (const [key, sig] of oldSigByKey) {
+    if (!oldKeyBySig.has(sig)) oldKeyBySig.set(sig, key);
+  }
+
+  // 4. Classify new chunks and decide which need embedding.
+  const toEmbedIdx: number[] = [];
+  const reusedBytes = new Array<Uint8Array | null>(parsed.chunks.length).fill(null);
+  for (let i = 0; i < parsed.chunks.length; i++) {
+    const chunk = parsed.chunks[i]!;
+    const newSig = chunk.signatureHash!;
+    const newKey = chunkKey(chunk);
+
+    const oldSigAtSameKey = oldSigByKey.get(newKey);
+    if (oldSigAtSameKey === newSig) {
+      const bytes = oldEmbeddingsByKey.get(newKey);
+      if (bytes) {
+        reusedBytes[i] = bytes;
+        continue;
+      }
+    }
+    // Moved: same signature elsewhere in the prior file.
+    const movedKey = oldKeyBySig.get(newSig);
+    if (movedKey && movedKey !== newKey) {
+      const bytes = oldEmbeddingsByKey.get(movedKey);
+      if (bytes) {
+        reusedBytes[i] = bytes;
+        continue;
+      }
+    }
+    toEmbedIdx.push(i);
+  }
+
+  // 5. Embed only the new/changed subset.
+  let freshVectors: Float32Array[] = [];
+  if (toEmbedIdx.length > 0) {
+    const inputs = toEmbedIdx.map((i) => chunkText(parsed.chunks[i]!));
+    const { vectors } = await embedder.embed(inputs, { inputType: "document" });
+    freshVectors = vectors;
+  }
+  const freshByIdx = new Map<number, Float32Array>();
+  for (let j = 0; j < toEmbedIdx.length; j++) {
+    const v = freshVectors[j];
+    if (v) freshByIdx.set(toEmbedIdx[j]!, v);
+  }
+
   const customFileTags = applyTagRules(tagRules, { filePath, content: source });
 
+  // 6. Atomic write: replace file's rows, restore/insert embeddings, update ledger.
   const tx = db.transaction(() => {
     db.query<unknown, [string]>(`DELETE FROM chunks WHERE file_path = ?`).run(filePath);
 
     let inserted = 0;
+    const hashes: ChunkHashEntry[] = [];
     for (let i = 0; i < parsed.chunks.length; i++) {
       const chunk = parsed.chunks[i]!;
-      const vec = vectors[i];
-      if (!vec) continue;
+      const reuse = reusedBytes[i];
+      const fresh = freshByIdx.get(i);
+      const vecBytes = reuse ?? (fresh ? toBytes(fresh) : null);
+      if (!vecBytes) continue;
       const chunkTags = mergeTags(chunk.tags, customFileTags);
 
       const res = db
@@ -230,7 +316,6 @@ async function indexOneFile(
         );
       if (!res) continue;
 
-      const vecBytes = new Uint8Array(vec.buffer, vec.byteOffset, vec.byteLength);
       db.query(`INSERT OR REPLACE INTO chunks_vec (rowid, embedding) VALUES (?, ?)`).run(
         res.id,
         vecBytes,
@@ -244,6 +329,7 @@ async function indexOneFile(
         );
       }
       inserted++;
+      hashes.push({ key: chunkKey(chunk), sig: chunk.signatureHash! });
     }
 
     upsertFileRow(db, parsed);
@@ -252,10 +338,44 @@ async function indexOneFile(
       blobSha,
       signatureHash: parsed.signatureHash,
       chunkCount: inserted,
+      chunkHashesJson: JSON.stringify(hashes),
     });
     return inserted;
   });
   return tx() as number;
+}
+
+function chunkKey(chunk: { chunkType: string; symbolName: string | null; startLine: number }): string {
+  return `${chunk.chunkType}:${chunk.symbolName ?? ""}:${chunk.startLine}`;
+}
+
+function loadEmbeddingsByKey(db: Database, filePath: string): Map<string, Uint8Array> {
+  const rows = db
+    .query<
+      {
+        chunk_type: string;
+        symbol_name: string | null;
+        start_line: number;
+        embedding: Uint8Array;
+      },
+      [string]
+    >(
+      `SELECT c.chunk_type, c.symbol_name, c.start_line, v.embedding
+         FROM chunks c
+         JOIN chunks_vec v ON v.rowid = c.id
+        WHERE c.file_path = ?`,
+    )
+    .all(filePath);
+  const map = new Map<string, Uint8Array>();
+  for (const r of rows) {
+    const key = `${r.chunk_type}:${r.symbol_name ?? ""}:${r.start_line}`;
+    map.set(key, r.embedding);
+  }
+  return map;
+}
+
+function toBytes(vec: Float32Array): Uint8Array {
+  return new Uint8Array(vec.buffer, vec.byteOffset, vec.byteLength);
 }
 
 function upsertFileRow(db: Database, parsed: ParseResult): void {

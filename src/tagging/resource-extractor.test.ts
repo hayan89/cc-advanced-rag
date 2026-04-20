@@ -99,6 +99,97 @@ describe("extractResourceTags", () => {
     });
   });
 
+  describe("queue / worker / job family", () => {
+    test("OcrWorker + worker/ocr_worker.go → resource:ocr only", () => {
+      const tags = extractResourceTags(
+        { filePath: "worker/ocr_worker.go", symbolName: "OcrWorker" },
+        opts,
+      );
+      expect(tags).toEqual(["resource:ocr"]);
+    });
+
+    test("UpstageOCRWorker (real tb-ocr) → file-level resource:ocr + symbol resource:upstage-ocr", () => {
+      // Regression guard: camel + consecutive uppercase run (OCR) with a prefix
+      // (Upstage) leaves `resource:upstage-ocr` at the symbol level. The shared
+      // `resource:ocr` only arrives via the path-leaf route after the stopwords
+      // expansion drops `worker` from the leaf.
+      const tags = extractResourceTags(
+        {
+          filePath: "backend/internal/worker/ocr_worker.go",
+          symbolName: "UpstageOCRWorker",
+        },
+        opts,
+      );
+      expect(tags).toContain("resource:ocr");
+      expect(tags).toContain("resource:upstage-ocr");
+    });
+
+    test("PaymentConsumer + worker/payment_consumer.go → resource:payment", () => {
+      const tags = extractResourceTags(
+        { filePath: "worker/payment_consumer.go", symbolName: "PaymentConsumer" },
+        opts,
+      );
+      expect(tags).toEqual(["resource:payment"]);
+    });
+
+    test("publishOcrJob symbol → resource:ocr via Job suffix strip + publish stopword", () => {
+      const tags = extractResourceTags(
+        { filePath: "src/publisher.go", symbolName: "publishOcrJob" },
+        opts,
+      );
+      expect(tags).toContain("resource:ocr");
+    });
+
+    test("PublishOCRJob PascalCase variant → resource:ocr", () => {
+      const tags = extractResourceTags(
+        { filePath: "worker/ocr_worker.go", symbolName: "PublishOCRJob" },
+        opts,
+      );
+      expect(tags).toContain("resource:ocr");
+    });
+
+    test("PublishOCRJobWithFallback: path propagation still surfaces resource:ocr", () => {
+      // `Fallback` is not a symbol-suffix and is not a stopword, so the symbol
+      // alone lands on `resource:ocr-with-fallback`. The file-level path tag
+      // from `worker/ocr_worker.go` delivers the canonical `resource:ocr`.
+      const tags = extractResourceTags(
+        {
+          filePath: "backend/internal/worker/ocr_worker.go",
+          symbolName: "PublishOCRJobWithFallback",
+        },
+        opts,
+      );
+      expect(tags).toContain("resource:ocr");
+    });
+
+    test("OcrHandler regression: still yields resource:ocr", () => {
+      const tags = extractResourceTags(
+        { filePath: "handlers/ocr.go", symbolName: "OcrHandler" },
+        opts,
+      );
+      expect(tags).toEqual(["resource:ocr"]);
+    });
+
+    test("handler ↔ worker pair share resource:ocr (Q3 fixture)", () => {
+      const handler = extractResourceTags(
+        {
+          filePath: "backend/api/handlers/ocr.go",
+          symbolName: "OCRHandler",
+        },
+        opts,
+      );
+      const worker = extractResourceTags(
+        {
+          filePath: "backend/internal/worker/ocr_worker.go",
+          symbolName: "UpstageOCRWorker",
+        },
+        opts,
+      );
+      const shared = handler.filter((t) => worker.includes(t));
+      expect(shared).toContain("resource:ocr");
+    });
+  });
+
   describe("test-file handling", () => {
     test("strips test token so test links to its subject", () => {
       expect(

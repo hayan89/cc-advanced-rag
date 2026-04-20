@@ -74,6 +74,25 @@ export const DEFAULT_SYMBOL_SUFFIXES = [
   "Repository",
   "Repo",
   "Model",
+  // Queue / worker / job family — keeps symbol-derived tags aligned with
+  // structuralBuckets entries like `worker/` so handler↔worker pairs can
+  // converge on the same resource tag.
+  "Worker",
+  "Workers",
+  "Consumer",
+  "Consumers",
+  "Producer",
+  "Producers",
+  "Publisher",
+  "Publishers",
+  "Subscriber",
+  "Subscribers",
+  "Processor",
+  "Processors",
+  "Job",
+  "Jobs",
+  "Task",
+  "Tasks",
 ];
 
 const FILENAME_SKIPLIST = new Set<string>([
@@ -286,7 +305,36 @@ export function defaultExtractorOpts(overrides?: Partial<ExtractorOpts>): Extrac
     structuralBuckets: overrides?.structuralBuckets ?? DEFAULT_STRUCTURAL_BUCKETS,
     stopwords:
       overrides?.stopwords ??
-      new Set(["index", "util", "helper", "types", "common", "main", "auth", "user", "config"]),
+      new Set([
+        "index",
+        "util",
+        "helper",
+        "types",
+        "common",
+        "main",
+        "auth",
+        "user",
+        "config",
+        // Message / job infrastructure tokens — drops the suffix half of
+        // path leaves like `ocr_worker` or symbols like `publishOcrJob`
+        // so handler↔worker↔job entries converge on the domain token.
+        "worker",
+        "workers",
+        "job",
+        "jobs",
+        "task",
+        "tasks",
+        "consumer",
+        "producer",
+        "publisher",
+        "subscriber",
+        "processor",
+        "publish",
+        "consume",
+        "subscribe",
+        "handle",
+        "process",
+      ]),
     symbolSuffixes: overrides?.symbolSuffixes ?? DEFAULT_SYMBOL_SUFFIXES,
     includePaths: overrides?.includePaths ?? [],
     excludePaths: overrides?.excludePaths ?? [],

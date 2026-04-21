@@ -13,6 +13,7 @@ import { javaParser } from "./java.ts";
 import { cppParser } from "./cpp.ts";
 import { csharpParser } from "./csharp.ts";
 import { svelteParser } from "./svelte.ts";
+import { sqlParser } from "./sql.ts";
 import { detectLanguage, parseFile, preWarmParsers, resetRegistry } from "./registry.ts";
 
 describe("go parser", () => {
@@ -294,6 +295,130 @@ describe("svelte parser", () => {
   });
 });
 
+describe("sql parser", () => {
+  test("빈 입력 → 빈 chunks, throw 금지 (preWarm 계약)", async () => {
+    const r = await sqlParser.parse("empty.sql", "");
+    expect(r.chunks).toEqual([]);
+    expect(r.metadata.language).toBe("sql");
+    expect(r.metadata.chunkCount).toBe(0);
+  });
+
+  test("postgres: plpgsql 함수 + dialect + feature 태그", async () => {
+    const src = `-- User upsert helper
+CREATE OR REPLACE FUNCTION public.upsert_user(p_email TEXT, p_name TEXT)
+RETURNS UUID AS $$
+DECLARE
+  v_id UUID;
+BEGIN
+  INSERT INTO users (email, name) VALUES (p_email, p_name)
+  ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+  RETURNING id INTO v_id;
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;`;
+    const r = await sqlParser.parse("db/postgres/funcs.sql", src);
+    const fn = r.chunks.find((c) => c.symbolName === "upsert_user");
+    expect(fn).toBeDefined();
+    expect(fn!.chunkType).toBe("function");
+    expect(fn!.packageName).toBe("public");
+    expect(fn!.tags).toContain("dialect:postgres");
+    expect(fn!.tags).toContain("sql-feature:plpgsql");
+    expect(fn!.tags).toContain("sql-feature:dollar-quoted");
+    expect(fn!.docComment).toContain("User upsert helper");
+  });
+
+  test("mysql: ENGINE=InnoDB 테이블 + feature 태그", async () => {
+    const src = `CREATE TABLE \`orders\` (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  total DECIMAL(10,2),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB CHARACTER SET utf8mb4;`;
+    const r = await sqlParser.parse("db/mysql/orders.sql", src);
+    const tbl = r.chunks.find((c) => c.symbolName === "orders");
+    expect(tbl).toBeDefined();
+    expect(tbl!.chunkType).toBe("struct");
+    expect(tbl!.tags).toContain("dialect:mysql");
+    expect(tbl!.tags).toContain("sql-feature:engine-innodb");
+    expect(tbl!.tags).toContain("sql-feature:auto-increment");
+    expect(tbl!.imports).toContain("users");
+  });
+
+  test("sqlite: WITHOUT ROWID + AUTOINCREMENT", async () => {
+    const src = `CREATE TABLE cache (key TEXT PRIMARY KEY, value BLOB) WITHOUT ROWID;`;
+    const r = await sqlParser.parse("db/sqlite/cache.sql", src);
+    const tbl = r.chunks.find((c) => c.symbolName === "cache");
+    expect(tbl).toBeDefined();
+    expect(tbl!.tags).toContain("dialect:sqlite");
+    expect(tbl!.tags).toContain("sql-feature:without-rowid");
+  });
+
+  test("mssql: IDENTITY + GO batch + bracket ident", async () => {
+    const src = `CREATE TABLE [dbo].[users] (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  name NVARCHAR(100)
+)
+GO
+CREATE TABLE [dbo].[orders] (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  user_id INT
+)
+GO`;
+    const r = await sqlParser.parse("db/mssql/init.sql", src);
+    expect(r.chunks.length).toBeGreaterThanOrEqual(2);
+    const users = r.chunks.find((c) => c.symbolName === "users");
+    expect(users).toBeDefined();
+    expect(users!.tags).toContain("dialect:mssql");
+    expect(users!.tags).toContain("sql-feature:identity");
+    expect(users!.tags).toContain("sql-feature:nvarchar");
+  });
+
+  test("migration: ALTER TABLE도 chunk로 보존", async () => {
+    const src = `ALTER TABLE users ADD COLUMN phone TEXT;
+ALTER TABLE users DROP COLUMN legacy_flag;`;
+    const r = await sqlParser.parse("db/migrations/0007_users_phone.sql", src);
+    const alters = r.chunks.filter((c) => c.receiverType === "alter");
+    expect(alters.length).toBe(2);
+    expect(alters[0]!.symbolName).toBe("users");
+    expect(alters[0]!.chunkType).toBe("method");
+  });
+
+  test("ansi fallback: dialect 미감지 시 dialect:ansi + 공통 feature", async () => {
+    const src = `CREATE TABLE plain (id INT PRIMARY KEY, code TEXT UNIQUE);`;
+    const r = await sqlParser.parse("schema.sql", src);
+    const tbl = r.chunks.find((c) => c.symbolName === "plain");
+    expect(tbl).toBeDefined();
+    expect(tbl!.tags).toContain("dialect:ansi");
+    expect(tbl!.tags).toContain("sql-feature:unique");
+  });
+
+  test("CREATE INDEX → const + receiverType=table", async () => {
+    const src = `CREATE INDEX idx_users_email ON users (email);`;
+    const r = await sqlParser.parse("schema.sql", src);
+    const idx = r.chunks.find((c) => c.symbolName === "idx_users_email");
+    expect(idx).toBeDefined();
+    expect(idx!.chunkType).toBe("const");
+    expect(idx!.receiverType).toBe("users");
+  });
+
+  test("CREATE VIEW → type, FROM 참조 imports 수집", async () => {
+    const src = `CREATE VIEW active_users AS SELECT * FROM users WHERE deleted_at IS NULL;`;
+    const r = await sqlParser.parse("schema.sql", src);
+    const v = r.chunks.find((c) => c.symbolName === "active_users");
+    expect(v).toBeDefined();
+    expect(v!.chunkType).toBe("type");
+    expect(v!.imports).toContain("users");
+  });
+
+  test("CREATE SCHEMA → module", async () => {
+    const src = `CREATE SCHEMA analytics;`;
+    const r = await sqlParser.parse("schema.sql", src);
+    const s = r.chunks.find((c) => c.symbolName === "analytics");
+    expect(s).toBeDefined();
+    expect(s!.chunkType).toBe("module");
+  });
+});
+
 describe("registry", () => {
   test("detectLanguage maps common extensions", () => {
     expect(detectLanguage("a.go")).toBe("go");
@@ -308,6 +433,10 @@ describe("registry", () => {
     expect(detectLanguage("a.h")).toBe("cpp");
     expect(detectLanguage("a.cs")).toBe("csharp");
     expect(detectLanguage("a.svelte")).toBe("svelte");
+    expect(detectLanguage("a.sql")).toBe("sql");
+    expect(detectLanguage("a.pgsql")).toBe("sql");
+    expect(detectLanguage("a.plpgsql")).toBe("sql");
+    expect(detectLanguage("a.mysql")).toBe("sql");
     expect(detectLanguage("README.md")).toBeNull();
   });
 
@@ -333,5 +462,12 @@ describe("registry", () => {
       warn: (msg) => warnings.push(msg),
     });
     expect(result.loaded.length + result.failed.length).toBe(2);
+  });
+
+  test("preWarmParsers: sql은 빈 입력 계약을 만족해 loaded 배열에 포함", async () => {
+    resetRegistry();
+    const result = await preWarmParsers(["sql"]);
+    expect(result.loaded).toContain("sql");
+    expect(result.failed).not.toContain("sql");
   });
 });

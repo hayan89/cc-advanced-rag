@@ -39,6 +39,27 @@ export function computeChunkSignatureHash(chunk: CodeChunk): string {
   ]);
 }
 
+/** SQL `--` 단일-라인 연속 주석을 역추적 수집. */
+export function extractSqlComment(
+  source: string,
+  startLine1Based: number,
+): string | null {
+  if (startLine1Based <= 1) return null;
+  const lines = source.split("\n");
+  const collected: string[] = [];
+  for (let i = startLine1Based - 2; i >= 0; i--) {
+    const line = lines[i]?.trim() ?? "";
+    if (line.startsWith("--")) {
+      collected.unshift(line.slice(2).replace(/^\s/, ""));
+    } else if (line === "") {
+      break;
+    } else {
+      break;
+    }
+  }
+  return collected.length > 0 ? collected.join("\n") : null;
+}
+
 /** C 계열(//, #) 단일-라인 연속 주석을 역추적 수집. */
 export function extractLineComment(
   source: string,

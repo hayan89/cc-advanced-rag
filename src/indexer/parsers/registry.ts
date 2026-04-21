@@ -15,6 +15,7 @@ const LOADERS: Record<SupportedLanguage, Loader> = {
   cpp: async () => (await import("./cpp.ts")).cppParser,
   csharp: async () => (await import("./csharp.ts")).csharpParser,
   svelte: async () => (await import("./svelte.ts")).svelteParser,
+  sql: async () => (await import("./sql.ts")).sqlParser,
 };
 
 const loaded = new Map<SupportedLanguage, LanguageParser>();
@@ -107,6 +108,10 @@ const EXT_MAP: Record<string, SupportedLanguage> = {
   ".h": "cpp",
   ".cs": "csharp",
   ".svelte": "svelte",
+  ".sql": "sql",
+  ".pgsql": "sql",
+  ".plpgsql": "sql",
+  ".mysql": "sql",
 };
 
 export function detectLanguage(filePath: string): SupportedLanguage | null {

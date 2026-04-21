@@ -70,7 +70,7 @@ Claude Code orchestrates:
 |---|---|---|
 | **MCP server** | `server.ts`, `src/tools/*.ts` | The actual search engine. Runs as a stdio MCP subprocess. Exposes 6 tools: `search_code`, `lookup_file`, `search_symbol`, `get_related`, `index_status`, `rebuild_index`. |
 | **Skills** | `skills/*/SKILL.md` + `scripts/` + `references/` | Tell Claude **when** and **how** to use the tools. `code-search` raises the priority of `search_code` over Read/Grep; `rag-bootstrap` orchestrates first-time setup. |
-| **Hooks** | `hooks/hooks.json`, `session-start.mjs`, `post-tool-use.mjs` | Automatic triggers, no manual invocation. `SessionStart` checks DB health; `PostToolUse` nudges `search_code` when Claude reads a code file and auto-invokes the bootstrap skill if the project is un-initialized. |
+| **Hooks** | `hooks/hooks.json`, `session-start.mjs`, `post-tool-use.mjs`, `subagent-start.mjs` | Automatic triggers, no manual invocation. `SessionStart` checks DB health; `PostToolUse` nudges `search_code` when Claude reads a code file and auto-invokes the bootstrap skill if the project is un-initialized; `SubagentStart` (matcher `Explore`) injects a RAG usage guide into the Explore subagent's own context so it prefers `search_code` from its first turn. |
 | **Commands** | `commands/rag-*.md` | Manual entry points. `/rag-init`, `/rag-reindex`, `/rag-status`, `/rag-doctor`. Useful for recovery or explicit actions the user wants to take. |
 
 ### Why four layers?

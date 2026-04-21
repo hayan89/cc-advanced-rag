@@ -12,6 +12,7 @@ export const SUPPORTED_LANGUAGES = [
   "cpp",
   "csharp",
   "svelte",
+  "sql",
 ] as const;
 
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
@@ -106,7 +107,7 @@ export const ConfigSchema = z
     logPath: z.string().default(".claude/code-rag.log"),
     lockPath: z.string().default(".claude/code-rag.lock"),
     embedding: EmbeddingConfigSchema.default({}),
-    languages: z.array(z.enum(SUPPORTED_LANGUAGES)).default(["typescript", "tsx", "javascript", "jsx"]),
+    languages: z.array(z.enum(SUPPORTED_LANGUAGES)).default(["typescript", "tsx", "javascript", "jsx", "sql"]),
     /** Optional glob patterns to limit indexing to a subset of the project. null = full project. */
     scope: z.array(z.string()).nullable().default(null),
     gitignoreRespect: z.boolean().default(true),

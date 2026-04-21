@@ -68,6 +68,7 @@ async function main(): Promise<void> {
 
   if (config) {
     checks.push(checkSecrets(config));
+    checks.push(checkLanguages(config));
     const dbCheck = await checkDb(args.root, config, args.fix);
     checks.push(...dbCheck);
     checks.push(checkIndexFreshness(args.root, config));
@@ -147,6 +148,21 @@ function loadConfigSafely(path: string): {
       },
     };
   }
+}
+
+function checkLanguages(config: ReturnType<typeof defaultConfig>): Check {
+  const langs = config.languages;
+  const recommended: Array<{ lang: "sql"; hint: string }> = [
+    { lang: "sql", hint: "DDL/migration 인덱싱 + vendor dialect 태그" },
+  ];
+  const missing = recommended.filter((r) => !langs.includes(r.lang));
+  if (missing.length === 0) {
+    return { label: `languages: ${langs.join(",")}`, status: "ok" };
+  }
+  const detail = missing
+    .map((m) => `"${m.lang}" 누락 (${m.hint}) — rag-config.json의 languages에 추가 후 /rag-reindex --full`)
+    .join("; ");
+  return { label: `languages: ${langs.join(",")}`, status: "warn", detail };
 }
 
 function checkSecrets(config: ReturnType<typeof defaultConfig>): Check {

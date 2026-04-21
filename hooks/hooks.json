@@ -20,6 +20,17 @@
           }
         ]
       }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "Explore",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun ${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start.mjs"
+          }
+        ]
+      }
     ]
   }
 }
